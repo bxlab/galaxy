@@ -6,7 +6,7 @@
 # appropriate `apt-get/pip install` statements.
 ---
 -
-    image: galaxy_ie_neo4j
+    image: thoba/galaxy_ie_neo4j
     description: |
         Neo4j is a highly scalable, robust native graph database.
 
