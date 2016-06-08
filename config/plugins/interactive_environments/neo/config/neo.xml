@@ -7,9 +7,7 @@
             <model_class>HistoryDatasetAssociation</model_class>
             <!-- here you filter out which types of datasets are
                appropriate for this GIE -->
-            <test type="isinstance" test_attr="datatype" result_type="datatype">tabular.Tabular</test>
-            <test type="isinstance" test_attr="datatype" result_type="datatype">data.Text</test>
-            <!--<test type="isinstance" test_attr="datatype" result_type="datatype">binary.Bam</test>-->
+            <test type="isinstance" test_attr="datatype" result_type="datatype">Neo4jDB.Neo4jDB</test>
             <to_param param_attr="id">dataset_id</to_param>
         </data_source>
     </data_sources>
