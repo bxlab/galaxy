@@ -6,6 +6,6 @@
 # appropriate `apt-get/pip install` statements.
 ---
 -
-    image: combat_tb_ie
+    image: thoba/combat_tb_galaxy_ie
     description: |
         Neo4j is a highly scalable, robust native graph database.
