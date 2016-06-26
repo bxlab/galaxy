@@ -146,8 +146,6 @@ class UserAPIController( BaseAPIController, UsesTagsMixin, CreatesUsersMixin, Cr
             raise exceptions.ConfigDoesNotAllowException( 'User creation is not allowed in this Galaxy instance' )
         if trans.app.config.use_remote_user and trans.user_is_admin():
             user = trans.get_or_create_remote_user( remote_user_email=payload['remote_user_email'] )
-            # if 'sendmail' in kwd:
-            #     log.debug("Found mail flag in kwd %s" % kwd['sendmail'])
         elif trans.user_is_admin():
             username = payload[ 'username' ]
             email = payload[ 'email' ]

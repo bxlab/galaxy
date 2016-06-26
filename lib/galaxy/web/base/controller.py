@@ -344,7 +344,6 @@ class CreatesUsersMixin:
             if trans.app.config.smtp_server is None:
                 log.exception("No mail server configured, unable to set password")
                 return None
-            #Won't let me do it with no password
             prt = trans.app.model.PasswordResetToken(user)
             trans.sa_session.add( prt )
             host = trans.request.host.split( ':' )[ 0 ]
@@ -358,7 +357,9 @@ class CreatesUsersMixin:
             frm = trans.app.config.email_from or 'galaxy-no-reply@' + host
             subject = 'Set Your Galaxy Password'
             try:
-                #Won't let me do it with no password
+                #Password cannot be NULL.
+                if password is None or password is '':
+                    password = self.app.security.get_new_guid()
                 user.set_password_cleartext( password )
                 user.username = username
                 if trans.app.config.user_activation_on:
