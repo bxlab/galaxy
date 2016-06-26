@@ -152,7 +152,7 @@ class UserAPIController( BaseAPIController, UsesTagsMixin, CreatesUsersMixin, Cr
             username = payload[ 'username' ]
             email = payload[ 'email' ]
             if 'sendmail' in payload:
-                user = self.create_user( trans=trans, email=email, username=username, password='validate_public', req_prt=True )
+                user = self.create_user( trans=trans, email=email, username=username, password='', req_prt=True )
             else: 
                 password = payload[ 'password' ]
                 message = "\n".join( [ validate_email( trans, email ),
