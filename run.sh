@@ -128,6 +128,7 @@ if [ -n "$GALAXY_RUN_ALL" ]; then
         fi
     done
 else
+    env
     # Handle only 1 server, whose name can be specified with --server-name parameter (defaults to "main")
     python ./scripts/paster.py serve $GALAXY_CONFIG_FILE $paster_args
 fi

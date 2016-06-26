@@ -146,17 +146,22 @@ class UserAPIController( BaseAPIController, UsesTagsMixin, CreatesUsersMixin, Cr
             raise exceptions.ConfigDoesNotAllowException( 'User creation is not allowed in this Galaxy instance' )
         if trans.app.config.use_remote_user and trans.user_is_admin():
             user = trans.get_or_create_remote_user( remote_user_email=payload['remote_user_email'] )
+            # if 'sendmail' in kwd:
+            #     log.debug("Found mail flag in kwd %s" % kwd['sendmail'])
         elif trans.user_is_admin():
             username = payload[ 'username' ]
             email = payload[ 'email' ]
-            password = payload[ 'password' ]
-            message = "\n".join( [ validate_email( trans, email ),
-                                   validate_password( trans, password, password ),
-                                   validate_publicname( trans, username ) ] ).rstrip()
-            if message:
-                raise exceptions.RequestParameterInvalidException( message )
-            else:
-                user = self.create_user( trans=trans, email=email, username=username, password=password )
+            if 'sendmail' in payload:
+                user = self.create_user( trans=trans, email=email, username=username, password='validate_public', req_prt=True )
+            else: 
+                password = payload[ 'password' ]
+                message = "\n".join( [ validate_email( trans, email ),
+                                      validate_password( trans, password, password ),
+                                      validate_publicname( trans, username ) ] ).rstrip()
+                if message:
+                    raise exceptions.RequestParameterInvalidException( message )
+                else:
+                    user = self.create_user( trans=trans, email=email, username=username, password=password, req_prt=False )
         else:
             raise exceptions.NotImplemented()
         item = user.to_dict( view='element', value_mapper={ 'id': trans.security.encode_id,

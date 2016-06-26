@@ -4,6 +4,7 @@ Contains functionality needed in every web interface
 import logging
 import operator
 import re
+import socket
 
 from six import string_types, text_type
 from sqlalchemy import true
@@ -40,6 +41,19 @@ from galaxy.managers import configuration
 
 
 log = logging.getLogger( __name__ )
+
+PASSWORD_SET_TEMPLATE = """
+To set your Galaxy password for the instance at %s use the following link,
+which will expire %s.
+
+%s
+
+If you did not make this request, no action is necessary on your part, though
+you may want to notify an administrator.
+
+If you're having trouble using the link when clicking it from email client, you
+can also copy and paste it into your browser.
+"""
 
 # States for passing messages
 SUCCESS, INFO, WARNING, ERROR = "done", "info", "warning", "error"
@@ -323,24 +337,63 @@ class CreatesUsersMixin:
     user forms, etc.... API created users are much more vanilla for the time being.
     """
 
-    def create_user( self, trans, email, username, password ):
+    def create_user( self, trans, email, username, password, req_prt=False ):
         user = trans.app.model.User( email=email )
-        user.set_password_cleartext( password )
-        user.username = username
-        if trans.app.config.user_activation_on:
-            user.active = False
-        else:
-            user.active = True  # Activation is off, every new user is active by default.
-        trans.sa_session.add( user )
-        trans.sa_session.flush()
-        trans.app.security_agent.create_private_user_role( user )
-        if trans.webapp.name == 'galaxy':
-            # We set default user permissions, before we log in and set the default history permissions
-            trans.app.security_agent.user_set_default_permissions( user,
+        if req_prt:
+        #Reset the user's password. Send an email with token that allows a password change
+            if trans.app.config.smtp_server is None:
+                log.exception("No mail server configured, unable to set password")
+                return None
+            #Won't let me do it with no password
+            prt = trans.app.model.PasswordResetToken(user)
+            trans.sa_session.add( prt )
+            host = trans.request.host.split( ':' )[ 0 ]
+            if host in [ 'localhost', '127.0.0.1', '0.0.0.0' ]:
+                host = socket.getfqdn()
+            reset_url = url_for( controller='user',
+                                 action="change_password",
+                                 token=prt.token, qualified=True)
+            body = PASSWORD_SET_TEMPLATE % ( host, prt.expiration_time.strftime(trans.app.config.pretty_datetime_format),
+                                                    reset_url )
+            frm = trans.app.config.email_from or 'galaxy-no-reply@' + host
+            subject = 'Set Your Galaxy Password'
+            try:
+                #Won't let me do it with no password
+                user.set_password_cleartext( password )
+                user.username = username
+                if trans.app.config.user_activation_on:
+                    user.active = False
+                else:
+                    user.active = True  # Activation is off, every new user is active by default.
+                trans.sa_session.add( user )
+                trans.sa_session.flush()
+                trans.app.security_agent.create_private_user_role( user )
+                if trans.webapp.name == 'galaxy':
+                    # We set default user permissions, before we log in and set the default history permissions
+                    trans.app.security_agent.user_set_default_permissions( user,
                                                                    default_access_private=trans.app.config.new_user_dataset_access_role_default_private )
-        return user
+                util.send_mail( frm, email, subject, body, trans.app.config )
+                trans.log_event( "User set password: %s" % email )
+            except Exception:
+                log.exception( 'Unable to set password.' )
+            return user
+        else:
+            user.set_password_cleartext( password )
+            user.username = username
+            if trans.app.config.user_activation_on:
+                user.active = False
+            else:
+                user.active = True  # Activation is off, every new user is active by default.
+            trans.sa_session.add( user )
+            trans.sa_session.flush()
+            trans.app.security_agent.create_private_user_role( user )
+            if trans.webapp.name == 'galaxy':
+                # We set default user permissions, before we log in and set the default history permissions
+                trans.app.security_agent.user_set_default_permissions( user,
+                                                                   default_access_private=trans.app.config.new_user_dataset_access_role_default_private )
+            return user
 
-
+ 
 class CreatesApiKeysMixin:
     """
     Mixing centralizing logic for creating API keys for user objects.
