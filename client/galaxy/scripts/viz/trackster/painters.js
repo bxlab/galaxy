@@ -187,16 +187,18 @@ LinePainter.prototype.draw = function(ctx, width, height, w_scale) {
         view_start = this.view_start,
         mode = this.mode,
         data = this.data;
-
     ctx.save();
 
     // Pixel position of 0 on the y axis
-    var y_zero = Math.round( height + min_value / vertical_range * height );
-
-    // Horizontal line to denote x-axis
-    if ( mode !== "Intensity" ) {
-        ctx.fillStyle = "#aaa";
-        ctx.fillRect( 0, y_zero, width, 1 );
+    if ( vertical_range > 0.0 ){
+        var y_zero = Math.round( height + min_value / vertical_range * height );
+        // Horizontal line to denote x-axis
+        if ( mode !== "Intensity" ) {
+            ctx.fillStyle = "#aaa";
+            ctx.fillRect( 0, y_zero, width, 1 );
+        }
+    } else {
+        var y_zero = 0.0;
     }
 
     ctx.beginPath();
@@ -231,7 +233,7 @@ LinePainter.prototype.draw = function(ctx, width, height, w_scale) {
         // Process Y (scaler) value.
         if (y === null) {
             if (in_path && mode === "Filled") {
-                ctx.lineTo(x_scaled, height_px);
+                ctx.lineTo(x_scaled, y_zero);
             }
             in_path = false;
             continue;
@@ -251,7 +253,11 @@ LinePainter.prototype.draw = function(ctx, width, height, w_scale) {
         if (mode === "Histogram") {
             // y becomes the bar height in pixels, which is the negated for canvas coords
             y = Math.round( y / vertical_range * height_px );
-            ctx.fillRect(x_scaled, y_zero, delta_x_px, - y );
+            if ( y < 0 ){
+                ctx.fillRect(x_scaled, y_zero, delta_x_px, - y );
+            } else {
+                ctx.fillRect(x_scaled, y_zero - y, delta_x_px, y );
+            }
         }
         else if (mode === "Intensity") {
             var
@@ -273,11 +279,12 @@ LinePainter.prototype.draw = function(ctx, width, height, w_scale) {
             else {
                 in_path = true;
                 if (mode === "Filled") {
-                    ctx.moveTo(x_scaled, height_px);
+                    ctx.lineTo(x_scaled, y_zero);
                     ctx.lineTo(x_scaled, y);
                 }
                 else {
-                    ctx.moveTo(x_scaled, y);
+                    ctx.moveTo(x_scaled, y_zero);
+                    ctx.lineTo(x_scaled, y);
                     // Use this approach (note: same as for filled) to draw line from 0 to
                     // first data point.
                     //ctx.moveTo(x_scaled, height_px);
@@ -285,10 +292,60 @@ LinePainter.prototype.draw = function(ctx, width, height, w_scale) {
                 }
             }
         }
-
         // Draw lines at boundaries if overflowing min or max
+        if ( ctx.svg == null ){
+            ctx.fillStyle = this.prefs.overflow_color;
+            if (top_overflow || bot_overflow) {
+                var overflow_x;
+                if (mode === "Histogram" || mode === "Intensity") {
+                    overflow_x = delta_x_px;
+                }
+                else { // Line and Filled, which are points
+                    x_scaled -= 2; // Move it over to the left so it's centered on the point
+                    overflow_x = 4;
+                }
+                if (top_overflow) {
+                    ctx.fillRect(x_scaled, 0, overflow_x, 3);
+                }
+                if (bot_overflow) {
+                    ctx.fillRect(x_scaled, height_px - 3, overflow_x, 3);
+                }
+            }
+            ctx.fillStyle = painter_color;
+        }
+    }
+    if (mode === "Filled") {
+        if (in_path) {
+            ctx.lineTo( x_scaled, y_zero );
+            ctx.lineTo( 0, y_zero );
+        }
+        ctx.fill();
+    }
+    else if (ctx.svg == null || mode == "Line") {
+        ctx.stroke();
+    }
+    
+    if (ctx.svg == true) {
         ctx.fillStyle = this.prefs.overflow_color;
-        if (top_overflow || bot_overflow) {
+        for (var i = 0, len = data.length; i < len; i++) {
+            top_overflow = false;
+            bot_overflow = false;
+            y = data[i][1];
+            if (y == null) {
+                continue;
+            }
+            if (y < min_value) {
+                y = min_value;
+                bot_overflow = true;
+            }
+            else if (y > max_value) {
+                y = max_value;
+                top_overflow = true;
+            }
+            else {
+                continue;
+            }
+            x_scaled = Math.ceil((data[i][0] - view_start) * w_scale);
             var overflow_x;
             if (mode === "Histogram" || mode === "Intensity") {
                 overflow_x = delta_x_px;
@@ -304,19 +361,7 @@ LinePainter.prototype.draw = function(ctx, width, height, w_scale) {
                 ctx.fillRect(x_scaled, height_px - 3, overflow_x, 3);
             }
         }
-        ctx.fillStyle = painter_color;
     }
-    if (mode === "Filled") {
-        if (in_path) {
-            ctx.lineTo( x_scaled, y_zero );
-            ctx.lineTo( 0, y_zero );
-        }
-        ctx.fill();
-    }
-    else {
-        ctx.stroke();
-    }
-
     ctx.restore();
 };
 
@@ -568,12 +613,37 @@ _.extend(LinkedFeaturePainter.prototype, FeaturePainter.prototype, {
                 ctx.fillRect(f_start, y_start + 1, f_end - f_start, thick_height);
                 // If strand is specified, draw arrows over feature
                 if ( feature_strand && full_height ) {
-                    if (feature_strand === "+") {
-                        ctx.fillStyle = ctx.canvas.manager.get_pattern( 'right_strand_inv' );
-                    } else if (feature_strand === "-") {
-                        ctx.fillStyle = ctx.canvas.manager.get_pattern( 'left_strand_inv' );
+                    if (!ctx.svg) {
+                        if (feature_strand === "+") {
+                            ctx.fillStyle = ctx.canvas.manager.get_pattern( 'right_strand_inv' );
+                        } else if (feature_strand === "-") {
+                            ctx.fillStyle = ctx.canvas.manager.get_pattern( 'left_strand_inv' );
+                        }
+                        ctx.fillRect(f_start, y_start + 1, f_end - f_start, thick_height);
+                    } else {
+                        ctx.strokeStyle = "#FFF";
+                        var y = y_start + 1 + thick_height / 2,
+                            pos = Math.ceil((f_start) / 5) * 5 + 0.5;
+                            pos = f_start + 1;
+                        while (pos < f_end - 2) {
+                            if (feature_strand == "+") {
+                                ctx.moveTo(pos, y + 2);
+                                ctx.lineTo(pos + 2, y);
+                                ctx.lineTo(pos, y - 2);
+                                ctx.stroke();
+                            } else {
+                                ctx.moveTo(pos + 2, y + 2);
+                                ctx.lineTo(pos, y);
+                                ctx.lineTo(pos + 2, y - 2);
+                                ctx.stroke();
+                            }
+                            pos = pos + 5;
+                        }
+                        ctx.moveTo(f_start, y);
+                        ctx.lineTo(f_end, y);
+                        ctx.stroke();
+                        ctx.strokeStyle = block_color;
                     }
-                    ctx.fillRect(f_start, y_start + 1, f_end - f_start, thick_height);
                 }
             } else {
                 //
@@ -608,17 +678,42 @@ _.extend(LinkedFeaturePainter.prototype, FeaturePainter.prototype, {
                     }
                     else { // mode === "Pack"
                         if (feature_strand) {
-                            if (feature_strand === "+") {
-                                ctx.fillStyle = ctx.canvas.manager.get_pattern( 'right_strand' );
-                            } else if (feature_strand === "-") {
-                                ctx.fillStyle = ctx.canvas.manager.get_pattern( 'left_strand' );
+                            if (!ctx.svg) {
+                                if (feature_strand === "+") {
+                                    ctx.fillStyle = ctx.canvas.manager.get_pattern( 'right_strand' );
+                                } else if (feature_strand === "-") {
+                                    ctx.fillStyle = ctx.canvas.manager.get_pattern( 'left_strand' );
+                                }
+                                ctx.fillRect(f_start, cur_y_start, f_end - f_start, cur_height);
+                            } else {
+                                ctx.strokeStyle = CONNECTOR_COLOR;
+                                var y = cur_y_start + 1 + cur_height / 2,
+                                    pos = Math.ceil((f_start) / 5) * 5 + 0.5;
+                                while (pos < f_end - 2) {
+                                    if (feature_strand == "+") {
+                                        ctx.moveTo(pos, y + 2);
+                                        ctx.lineTo(pos + 2, y);
+                                        ctx.lineTo(pos, y - 2);
+                                        ctx.stroke();
+                                    } else {
+                                        ctx.moveTo(pos + 2, y + 2);
+                                        ctx.lineTo(pos, y);
+                                        ctx.lineTo(pos + 2, y - 2);
+                                        ctx.stroke();
+                                    }
+                                    pos = pos + 5;
+                                }
+                                ctx.moveTo(f_start, y);
+                                ctx.lineTo(f_end, y);
+                                ctx.stroke();
+                                ctx.strokeStyle = block_color;
                             }
                         }
                         else {
                             ctx.fillStyle = CONNECTOR_COLOR;
+                            ctx.fillRect(f_start, cur_y_start, f_end - f_start, cur_height);
                         }
                     }
-                    ctx.fillRect(f_start, cur_y_start, f_end - f_start, cur_height);
                 }
 
                 // Draw blocks.
@@ -644,19 +739,43 @@ _.extend(LinkedFeaturePainter.prototype, FeaturePainter.prototype, {
                             block_thick_end = Math.min(block_end, thick_end);
                         ctx.fillRect(block_thick_start, y_start + 1, block_thick_end - block_thick_start, thick_height);
                         if ( feature_blocks.length === 1 && mode === "Pack") {
-                            // Exactly one block means we have no introns, but do have a distinct "thick" region,
-                            // draw arrows over it if in pack mode.
-                            if (feature_strand === "+") {
-                                ctx.fillStyle = ctx.canvas.manager.get_pattern( 'right_strand_inv' );
-                            } else if (feature_strand === "-") {
-                                ctx.fillStyle = ctx.canvas.manager.get_pattern( 'left_strand_inv' );
-                            }
                             // If region is wide enough in pixels, pad a bit
                             if ( block_thick_start + 14 < block_thick_end ) {
                                 block_thick_start += 2;
                                 block_thick_end -= 2;
                             }
-                            ctx.fillRect(block_thick_start, y_start + 1, block_thick_end - block_thick_start, thick_height);
+                            // Exactly one block means we have no introns, but do have a distinct "thick" region,
+                            // draw arrows over it if in pack mode.
+                            if (!ctx.svg) {
+                                if (feature_strand === "+") {
+                                    ctx.fillStyle = ctx.canvas.manager.get_pattern( 'right_strand_inv' );
+                                } else if (feature_strand === "-") {
+                                    ctx.fillStyle = ctx.canvas.manager.get_pattern( 'left_strand_inv' );
+                                }
+                                ctx.fillRect(block_thick_start, y_start + 1, block_thick_end - block_thick_start, thick_height);
+                            } else {
+                                ctx.stokeStyle = "#FFF";
+                                var y = y_start + 1 + thick_height / 2,
+                                    pos = Math.ceil((block_thick_start) / 5) * 5 + 0.5;
+                                while (pos < block_thick_end - 2) {
+                                    if (feature_strand == "+") {
+                                        ctx.moveTo(pos, y + 2);
+                                        ctx.lineTo(pos + 2, y);
+                                        ctx.lineTo(pos, y - 2);
+                                        ctx.stroke();
+                                    } else {
+                                        ctx.moveTo(pos + 2, y + 2);
+                                        ctx.lineTo(pos, y);
+                                        ctx.lineTo(pos + 2, y - 2);
+                                        ctx.stroke();
+                                    }
+                                    pos = pos + 5;
+                                }
+                                ctx.moveTo(block_thick_start, y);
+                                ctx.lineTo(block_thick_end, y);
+                                ctx.stroke();
+                                ctx.strokeStyle = block_color;
+                            }
                         }
                     }
                     // Draw individual connectors if required
@@ -695,12 +814,44 @@ _.extend(LinkedFeaturePainter.prototype, FeaturePainter.prototype, {
                 // FIXME: assumption here that the entire view starts at 0
                 if (tile_low === 0 && f_start - ctx.measureText(feature_name).width < 0) {
                     ctx.textAlign = "left";
-                    ctx.fillText(feature_name, f_end + LABEL_SPACING, y_start + 8, this.max_label_length);
-                    draw_end += ctx.measureText(feature_name).width + LABEL_SPACING;
+                    /*****
+                     * Fix!
+                     */
+                    if (!ctx.svg) {
+                        ctx.fillText(feature_name, f_end + LABEL_SPACING, y_start + 8, this.max_label_length);
+                        draw_end += ctx.measureText(feature_name).width + LABEL_SPACING;
+                    } else {
+                        if (!ctx.canvas.manager.labels) {
+                            ctx.canvas.manager.labels = [];
+                        }
+                        ctx.canvas.manager.labels.push({
+                            'text':feature_name,
+                            'x':f_end + LABEL_SPACING,
+                            'y':y_start + 8,
+                            'align':'start',
+                            'max_length':this.max_label_length
+                        });
+                    }
                 } else {
                     ctx.textAlign = "right";
-                    ctx.fillText(feature_name, f_start - LABEL_SPACING, y_start + 8, this.max_label_length);
-                    draw_start -= ctx.measureText(feature_name).width + LABEL_SPACING;
+                    /*****
+                     * Fix!
+                     */
+                     if (!ctx.svg) {
+                        ctx.fillText(feature_name, f_start - LABEL_SPACING, y_start + 8, this.max_label_length);
+                        draw_start -= ctx.measureText(feature_name).width + LABEL_SPACING;
+                    } else {
+                        if (!ctx.canvas.manager.labels) {
+                            ctx.canvas.manager.labels = [];
+                        }
+                        ctx.canvas.manager.labels.push({
+                            'text':feature_name,
+                            'x':f_start - LABEL_SPACING,
+                            'y':y_start + 8,
+                            'align':'end',
+                            'max_length':this.max_label_length
+                        });
+                    }
                 }
                 //ctx.fillStyle = block_color;
             }
